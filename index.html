@@ -38,6 +38,10 @@
                     <span class="nav-icon">📝</span>
                     <span class="nav-text">Jejak Aktivitas</span>
                 </button>
+                <button class="nav-tab" data-tab="hasilkuis">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">Hasil & Nilai Kuis Siswa</span>
+                </button>
                 <button class="nav-tab highlight-tab" data-tab="manajementoko">
                     <span class="nav-icon">🏪</span>
                     <span class="nav-text">Manajemen Toko & Barang</span>
@@ -77,8 +81,73 @@
                             </div>
                             <span class="badge-online" id="onlineBadge">0 Siswa Online</span>
                         </div>
-                        <div class="empty-state-banner">
-                            <p>Belum ada siswa yang terdeteksi online saat ini.</p>
+                        <div id="studentMonitorContainer">
+                            <div class="empty-state-banner">
+                                <p>Belum ada siswa yang terdeteksi online saat ini.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 3: Hasil & Nilai Kuis Siswa (Live Real-Time Monitoring) -->
+                <div class="tab-content hidden" id="tab-hasilkuis">
+                    <div class="main-card purple-top-accent">
+                        <div class="card-header-row">
+                            <div class="title-group">
+                                <span class="card-icon">📊</span>
+                                <div>
+                                    <h3>Monitoring Hasil & Nilai Kuis Siswa</h3>
+                                    <p class="subtitle">Rekapitulasi dan pemantauan nilai kuis edukasi ekonomi siswa secara real-time dari Firebase.</p>
+                                </div>
+                            </div>
+                            <button class="btn btn-pill" id="btnExportQuizCSV" style="background: #10B981; color: white; border: none; font-weight: 700; cursor: pointer;">📥 Unduh Rekap CSV</button>
+                        </div>
+
+                        <!-- Ringkasan Statistik Kuis -->
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 15px; margin-bottom: 18px;">
+                            <div style="background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 12px; padding: 12px; text-align: center;">
+                                <div style="font-size: 11px; color: #64748b; font-weight: 700;">TOTAL KUIS DIIKUTI</div>
+                                <div style="font-size: 22px; font-weight: 800; color: #1e293b; margin-top: 2px;" id="statTotalQuiz">0</div>
+                            </div>
+                            <div style="background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 12px; padding: 12px; text-align: center;">
+                                <div style="font-size: 11px; color: #64748b; font-weight: 700;">RATA-RATA NILAI</div>
+                                <div style="font-size: 22px; font-weight: 800; color: #0284c7; margin-top: 2px;" id="statAvgScore">0</div>
+                            </div>
+                            <div style="background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 12px; padding: 12px; text-align: center;">
+                                <div style="font-size: 11px; color: #64748b; font-weight: 700;">NILAI SEMPURNA (100)</div>
+                                <div style="font-size: 22px; font-weight: 800; color: #16a34a; margin-top: 2px;" id="statPerfectCount">0</div>
+                            </div>
+                        </div>
+
+                        <!-- Filter & Search Bar -->
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                            <input type="text" id="searchQuizStudent" placeholder="🔍 Cari Nama Siswa..." style="flex: 1; min-width: 180px; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px;">
+                            <select id="filterQuizClass" style="padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; background: white;">
+                                <option value="all">Semua Kelas</option>
+                            </select>
+                        </div>
+
+                        <!-- Layout Interaktif Master-Detail Siswa & Hasil Kuis -->
+                        <div style="display: grid; grid-template-columns: minmax(240px, 280px) 1fr; gap: 16px; min-height: 380px;">
+                            <!-- Panel Kiri: Daftar Nama Siswa yang Sudah Mengerjakan Kuis -->
+                            <div style="background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 12px; padding: 12px; display: flex; flex-direction: column;">
+                                <div style="font-weight: 700; font-size: 13px; color: #334155; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+                                    <span>👤 Daftar Siswa Kuis</span>
+                                    <span id="studentCountBadge" style="background: #e2e8f0; color: #475569; font-size: 11px; padding: 2px 8px; border-radius: 10px;">0 Siswa</span>
+                                </div>
+                                <div id="studentMasterList" style="display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 420px; padding-right: 4px;">
+                                    <div class="empty-state-banner">
+                                        <p>Belum ada data siswa.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Panel Kanan: Rincian Hasil Kuis Siswa yang Dipilih -->
+                            <div id="studentDetailView" style="background: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px; padding: 16px; display: flex; flex-direction: column;">
+                                <div class="empty-state-banner">
+                                    <p>👈 Klik salah satu nama siswa di sebelah kiri untuk melihat rincian hasil kuisnya.</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

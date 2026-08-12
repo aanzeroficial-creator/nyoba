@@ -70,7 +70,24 @@ document.addEventListener("DOMContentLoaded", () => {
     setupFormEvents();
     setupCategoryFilter();
     setupExportAndSync();
+    setupQuizEvents();
 });
+
+function setupQuizEvents() {
+    const searchInput = document.getElementById("searchQuizStudent");
+    const classFilter = document.getElementById("filterQuizClass");
+    const btnExport = document.getElementById("btnExportQuizCSV");
+
+    if (searchInput) {
+        searchInput.addEventListener("input", () => renderQuizResultsMonitor());
+    }
+    if (classFilter) {
+        classFilter.addEventListener("change", () => renderQuizResultsMonitor());
+    }
+    if (btnExport) {
+        btnExport.addEventListener("click", () => downloadQuizCSV());
+    }
+}
 
 // Initialize Firebase & Listen Real-Time
 function initFirebase() {
@@ -99,12 +116,309 @@ function initFirebase() {
             showToast("ℹ️ Mode offline. (Set aturan Firestore ke Public jika error permission)");
         });
 
+        // Listen Real-Time Student Logins
+        const loginsRef = collection(db, "student_logins");
+        onSnapshot(loginsRef, (snapshot) => {
+            const studentList = [];
+            snapshot.forEach((docSnap) => {
+                const data = docSnap.data();
+                let name = "Siswa";
+                let className = "-";
+                let time = "-";
+                let status = "Online 🟢";
+
+                if (data.student_name) name = data.student_name.stringValue || data.student_name;
+                if (data.student_class) className = data.student_class.stringValue || data.student_class;
+                if (data.login_time) time = data.login_time.stringValue || data.login_time;
+                if (data.status) status = data.status.stringValue || data.status;
+
+                studentList.push({
+                    id: docSnap.id,
+                    name,
+                    class: className,
+                    time,
+                    status
+                });
+            });
+
+            renderStudentLoginsMonitor(studentList);
+        // Listen Real-Time Student Quiz Results
+        const quizResultsRef = collection(db, "student_quiz_results");
+        onSnapshot(quizResultsRef, (snapshot) => {
+            quizResultsList = [];
+            snapshot.forEach((docSnap) => {
+                const data = docSnap.data();
+                let name = "Siswa";
+                let className = "5A";
+                let title = "Kuis";
+                let score = 0;
+                let time = "-";
+
+                if (data.student_name) name = data.student_name.stringValue || data.student_name;
+                if (data.student_class) className = data.student_class.stringValue || data.student_class;
+                if (data.quiz_title) title = data.quiz_title.stringValue || data.quiz_title;
+                if (data.score !== undefined) {
+                    score = typeof data.score === 'object' ? (data.score.integerValue || data.score.doubleValue || 0) : data.score;
+                }
+                if (data.timestamp) time = data.timestamp.stringValue || data.timestamp;
+
+                quizResultsList.push({
+                    id: docSnap.id,
+                    name,
+                    class: className,
+                    title,
+                    score: parseInt(score),
+                    time
+                });
+            });
+
+            updateClassDropdownFilter();
+            renderQuizResultsMonitor();
+        }, (error) => {
+            console.warn("Quiz results listener error:", error);
+        });
 
     } catch (e) {
         console.error("Firebase init error:", e);
         renderItemsGrid();
     }
+}
 
+let quizResultsList = [];
+let selectedStudentKey = null;
+
+function updateClassDropdownFilter() {
+    const select = document.getElementById("filterQuizClass");
+    if (!select) return;
+    const classes = new Set(["all"]);
+    quizResultsList.forEach(q => { if (q.class) classes.add(q.class); });
+
+    let html = `<option value="all">Semua Kelas</option>`;
+    classes.forEach(c => {
+        if (c !== "all") html += `<option value="${escapeHtml(c)}">Kelas ${escapeHtml(c)}</option>`;
+    });
+    select.innerHTML = html;
+}
+
+function renderQuizResultsMonitor() {
+    const masterList = document.getElementById("studentMasterList");
+    const detailView = document.getElementById("studentDetailView");
+    const statTotal = document.getElementById("statTotalQuiz");
+    const statAvg = document.getElementById("statAvgScore");
+    const statPerfect = document.getElementById("statPerfectCount");
+    const countBadge = document.getElementById("studentCountBadge");
+    const searchVal = (document.getElementById("searchQuizStudent")?.value || "").toLowerCase().trim();
+    const classVal = document.getElementById("filterQuizClass")?.value || "all";
+
+    if (!masterList || !detailView) return;
+
+    let filtered = quizResultsList;
+    if (classVal !== "all") {
+        filtered = filtered.filter(q => q.class === classVal);
+    }
+    if (searchVal !== "") {
+        filtered = filtered.filter(q => q.name.toLowerCase().includes(searchVal) || q.class.toLowerCase().includes(searchVal) || q.title.toLowerCase().includes(searchVal));
+    }
+
+    if (statTotal) statTotal.textContent = quizResultsList.length;
+    if (statAvg) {
+        const totalSum = quizResultsList.reduce((acc, curr) => acc + curr.score, 0);
+        const avg = quizResultsList.length > 0 ? Math.round(totalSum / quizResultsList.length) : 0;
+        statAvg.textContent = avg;
+    }
+    if (statPerfect) {
+        const perfects = quizResultsList.filter(q => q.score >= 95).length;
+        statPerfect.textContent = perfects;
+    }
+
+    // Group items by student key ("Name__Class")
+    const studentMap = new Map();
+    filtered.forEach(q => {
+        const key = `${q.name}__${q.class}`;
+        if (!studentMap.has(key)) {
+            studentMap.set(key, {
+                name: q.name,
+                class: q.class,
+                quizzes: []
+            });
+        }
+        studentMap.get(key).quizzes.push(q);
+    });
+
+    const students = Array.from(studentMap.values());
+    if (countBadge) countBadge.textContent = `${students.length} Siswa`;
+
+    if (students.length === 0) {
+        masterList.innerHTML = `<div class="empty-state-banner"><p>Belum ada data siswa.</p></div>`;
+        detailView.innerHTML = `<div class="empty-state-banner"><p>Belum ada data nilai kuis siswa yang tersimpan.</p></div>`;
+        return;
+    }
+
+    if (!selectedStudentKey || !students.some(s => `${s.name}__${s.class}` === selectedStudentKey)) {
+        selectedStudentKey = `${students[0].name}__${students[0].class}`;
+    }
+
+    // Render Master Student List (Left Column)
+    let masterHtml = "";
+    students.forEach(s => {
+        const sKey = `${s.name}__${s.class}`;
+        const isSelected = (sKey === selectedStudentKey);
+        const avatar = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(s.name)}`;
+        const latestQuiz = s.quizzes[s.quizzes.length - 1] || s.quizzes[0];
+        const lastScore = latestQuiz ? latestQuiz.score : 0;
+
+        let scoreBadgeColor = "#10B981";
+        if (lastScore < 50) scoreBadgeColor = "#EF4444";
+        else if (lastScore < 80) scoreBadgeColor = "#F59E0B";
+
+        const bg = isSelected ? "#F3E8FF" : "#ffffff";
+        const border = isSelected ? "#8B5CF6" : "#e2e8f0";
+
+        masterHtml += `
+            <div onclick="selectStudentForQuiz('${escapeHtml(sKey)}')" 
+                 style="background: ${bg}; border: 2px solid ${border}; border-radius: 10px; padding: 10px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: all 0.2s ease;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <img src="${avatar}" style="width: 36px; height: 36px; border-radius: 50%; background: #e2e8f0;">
+                    <div>
+                        <div style="font-weight: 700; font-size: 13px; color: #1e293b;">${escapeHtml(s.name)}</div>
+                        <div style="font-size: 11px; color: #64748b; font-weight: 600;">Kelas ${escapeHtml(s.class)} • ${s.quizzes.length} Kuis</div>
+                    </div>
+                </div>
+                <div style="background: ${scoreBadgeColor}22; color: ${scoreBadgeColor}; font-size: 12px; font-weight: 800; padding: 4px 8px; border-radius: 8px;">
+                    ${lastScore}
+                </div>
+            </div>
+        `;
+    });
+
+    masterList.innerHTML = masterHtml;
+
+    // Render Selected Student's Detail View (Right Column)
+    renderStudentDetailView(studentMap.get(selectedStudentKey));
+}
+
+window.selectStudentForQuiz = function(sKey) {
+    selectedStudentKey = sKey;
+    renderQuizResultsMonitor();
+};
+
+function renderStudentDetailView(studentObj) {
+    const detailView = document.getElementById("studentDetailView");
+    if (!detailView || !studentObj) return;
+
+    const avatar = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(studentObj.name)}`;
+    const totalQuizzes = studentObj.quizzes.length;
+    const avgScore = Math.round(studentObj.quizzes.reduce((acc, q) => acc + q.score, 0) / totalQuizzes);
+
+    let detailHtml = `
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #f1f5f9; padding-bottom: 12px; margin-bottom: 14px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <img src="${avatar}" style="width: 52px; height: 52px; border-radius: 50%; background: #edf2f7; border: 2px solid #8B5CF6;">
+                <div>
+                    <h4 style="margin: 0; font-size: 16px; font-weight: 800; color: #1e293b;">${escapeHtml(studentObj.name)}</h4>
+                    <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b; font-weight: 600;">Kelas ${escapeHtml(studentObj.class)} • Status: Telah Mengerjakan Ujian Kuis</p>
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <div style="background: #F3E8FF; border: 1px solid #DDD6FE; padding: 6px 12px; border-radius: 8px; text-align: center;">
+                    <div style="font-size: 10px; color: #6D28D9; font-weight: 700;">RATA-RATA</div>
+                    <div style="font-size: 16px; font-weight: 800; color: #7C3AED;">${avgScore}</div>
+                </div>
+                <div style="background: #ECFDF5; border: 1px solid #A7F3D0; padding: 6px 12px; border-radius: 8px; text-align: center;">
+                    <div style="font-size: 10px; color: #047857; font-weight: 700;">TOTAL KUIS</div>
+                    <div style="font-size: 16px; font-weight: 800; color: #059669;">${totalQuizzes}</div>
+                </div>
+            </div>
+        </div>
+
+        <h5 style="margin: 0 0 10px 0; font-size: 13px; color: #475569; font-weight: 700;">📋 Riwayat & Hasil Kuis Siswa:</h5>
+        <div style="display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: 320px;">
+    `;
+
+    studentObj.quizzes.forEach(q => {
+        let badgeBg = "#10B981";
+        let predikat = "Lulus Sempurna 🌟";
+        let evalText = "Siswa sudah menguasai seluruh materi edukasi ekonomi ini dengan sangat baik!";
+
+        if (q.score < 50) {
+            badgeBg = "#EF4444";
+            predikat = "Perlu Remedial 📖";
+            evalText = "Siswa perlu mengulang kembali materi dan berdiskusi bersama guru.";
+        } else if (q.score < 80) {
+            badgeBg = "#F59E0B";
+            predikat = "Cukup Baik 👍";
+            evalText = "Siswa sudah cukup memahami konsep dasar, namun perlu lebih teliti pada pilihan soal.";
+        }
+
+        detailHtml += `
+            <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 12px; display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                    <div style="font-weight: 800; font-size: 14px; color: #1e293b;">${escapeHtml(q.title)}</div>
+                    <div style="font-size: 11px; color: #64748b; margin-top: 2px;">⏰ Selesai pada: ${escapeHtml(q.time)}</div>
+                    <div style="font-size: 11px; color: #475569; margin-top: 4px; font-style: italic;">💡 Evaluation Note: "${evalText}"</div>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 18px; font-weight: 900; color: ${badgeBg};">${q.score} / 100</div>
+                    <span style="display: inline-block; margin-top: 4px; background: ${badgeBg}22; color: ${badgeBg}; font-weight: 700; padding: 3px 8px; border-radius: 10px; font-size: 10px;">${predikat}</span>
+                </div>
+            </div>
+        `;
+    });
+
+    detailHtml += `</div>`;
+    detailView.innerHTML = detailHtml;
+}
+
+function downloadQuizCSV() {
+    if (quizResultsList.length === 0) {
+        showToast("⚠️ Belum ada data nilai kuis untuk diunduh.");
+        return;
+    }
+    let csvContent = "data:text/csv;charset=utf-8,Nama Siswa,Kelas,Kuis,Nilai,Waktu\n";
+    quizResultsList.forEach(q => {
+        csvContent += `"${q.name}","${q.class}","${q.title}",${q.score},"${q.time}"\n`;
+    });
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Rekap_Nilai_Kuis_Siswa_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    showToast("📥 File Rekap Nilai Kuis CSV berhasil diunduh!");
+}
+
+function renderStudentLoginsMonitor(studentList) {
+    const badge = document.getElementById("onlineBadge");
+    const container = document.getElementById("studentMonitorContainer");
+
+    if (badge) {
+        badge.textContent = `${studentList.length} Siswa Online`;
+    }
+
+    if (!container) return;
+
+    if (studentList.length === 0) {
+        container.innerHTML = `<div class="empty-state-banner"><p>Belum ada siswa yang terdeteksi online saat ini.</p></div>`;
+        return;
+    }
+
+    let html = `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 15px;">`;
+    studentList.forEach(s => {
+        const avatar = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(s.name)}`;
+        html += `
+            <div style="background: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px; padding: 12px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+                <img src="${avatar}" style="width: 44px; height: 44px; border-radius: 50%; background: #edf2f7;">
+                <div>
+                    <div style="font-weight: 700; font-size: 14px; color: #2d3748;">${escapeHtml(s.name)}</div>
+                    <div style="font-size: 12px; color: #4a5568; font-weight: 600;">Kelas: ${escapeHtml(s.class)}</div>
+                    <div style="font-size: 11px; color: #718096; margin-top: 2px;">⏰ ${escapeHtml(s.time)}</div>
+                </div>
+            </div>
+        `;
+    });
+    html += `</div>`;
+    container.innerHTML = html;
 }
 
 // Sidebar Tab Navigation Handler
