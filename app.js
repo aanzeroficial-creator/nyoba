@@ -62,6 +62,9 @@ let app, db;
 let shopItemsList = [];
 let currentCategoryFilter = "all";
 let isFirebaseOnline = false;
+let lastStudentList = [];
+let presenceCheckInterval = null;
+
 
 // Initialize App
 document.addEventListener("DOMContentLoaded", () => {
@@ -116,35 +119,69 @@ function initFirebase() {
             showToast("ℹ️ Mode offline. (Set aturan Firestore ke Public jika error permission)");
         });
 
-        // Listen Real-Time Student Logins
+        // Listen Real-Time Student Logins with Presence Timeout
         const loginsRef = collection(db, "student_logins");
         onSnapshot(loginsRef, (snapshot) => {
-            const studentList = [];
+            lastStudentList = [];
+            const nowUnix = Math.floor(Date.now() / 1000);
+
             snapshot.forEach((docSnap) => {
                 const data = docSnap.data();
                 let name = "Siswa";
                 let className = "-";
                 let time = "-";
-                let status = "Online 🟢";
+                let rawStatus = "Online 🟢";
+                let lastPing = 0;
 
                 if (data.student_name) name = data.student_name.stringValue || data.student_name;
                 if (data.student_class) className = data.student_class.stringValue || data.student_class;
                 if (data.login_time) time = data.login_time.stringValue || data.login_time;
-                if (data.status) status = data.status.stringValue || data.status;
+                if (data.status) rawStatus = data.status.stringValue || data.status;
+                if (data.last_ping) {
+                    lastPing = typeof data.last_ping === 'object' ? parseInt(data.last_ping.integerValue || data.last_ping.doubleValue || 0) : parseInt(data.last_ping);
+                }
 
-                studentList.push({
+                // Kalkulasi keaktifan real-time presence:
+                // Jika status "Offline 🔴" ATAU last_ping lebih dari 35 detik yang lalu, tandai Offline 🔴
+                let isOnline = false;
+                if (rawStatus.includes("Online") || rawStatus.includes("🟢")) {
+                    if (lastPing === 0 || (nowUnix - lastPing <= 35)) {
+                        isOnline = true;
+                    }
+                }
+
+                lastStudentList.push({
                     id: docSnap.id,
                     name,
                     class: className,
                     time,
-                    status
+                    status: isOnline ? "Online 🟢" : "Offline 🔴",
+                    isOnline,
+                    lastPing
                 });
             });
 
-            renderStudentLoginsMonitor(studentList);
+            renderStudentLoginsMonitor(lastStudentList);
         }, (error) => {
             console.warn("Logins listener error:", error);
         });
+
+        // Auto re-evaluate student presence timeout every 10 seconds
+        if (!presenceCheckInterval) {
+            presenceCheckInterval = setInterval(() => {
+                if (lastStudentList.length > 0) {
+                    const nowUnix = Math.floor(Date.now() / 1000);
+                    lastStudentList.forEach(s => {
+                        if (s.isOnline && s.lastPing > 0 && (nowUnix - s.lastPing > 35)) {
+                            s.isOnline = false;
+                            s.status = "Offline 🔴";
+                        }
+                    });
+                    renderStudentLoginsMonitor(lastStudentList);
+                }
+            }, 10000);
+        }
+
 
         // Listen Real-Time Student Quiz Results
         const quizResultsRef = collection(db, "student_quiz_results");
@@ -397,8 +434,11 @@ function renderStudentLoginsMonitor(studentList) {
     const badge = document.getElementById("onlineBadge");
     const container = document.getElementById("studentMonitorContainer");
 
+    // Hitung HANYA siswa yang benar-benar aktif Online 🟢
+    const activeOnlineList = studentList.filter(s => s.isOnline);
+
     if (badge) {
-        badge.textContent = `${studentList.length} Siswa Online`;
+        badge.textContent = `${activeOnlineList.length} Siswa Online`;
     }
 
     if (!container) return;
@@ -408,16 +448,29 @@ function renderStudentLoginsMonitor(studentList) {
         return;
     }
 
-    let html = `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 15px;">`;
-    studentList.forEach(s => {
+    // Urutkan: Siswa Online 🟢 di atas, Siswa Offline 🔴 di bawah
+    const sortedList = [...studentList].sort((a, b) => (b.isOnline ? 1 : 0) - (a.isOnline ? 1 : 0));
+
+    let html = `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin-top: 15px;">`;
+    sortedList.forEach(s => {
         const avatar = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(s.name)}`;
+        const statusBg = s.isOnline ? "#DEF7EC" : "#F3F4F6";
+        const statusColor = s.isOnline ? "#03543F" : "#6B7280";
+        const borderCol = s.isOnline ? "#31C48D" : "#E5E7EB";
+        const statusText = s.isOnline ? "Online 🟢" : "Offline 🔴";
+
         html += `
-            <div style="background: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px; padding: 12px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
-                <img src="${avatar}" style="width: 44px; height: 44px; border-radius: 50%; background: #edf2f7;">
-                <div>
-                    <div style="font-weight: 700; font-size: 14px; color: #2d3748;">${escapeHtml(s.name)}</div>
-                    <div style="font-size: 12px; color: #4a5568; font-weight: 600;">Kelas: ${escapeHtml(s.class)}</div>
-                    <div style="font-size: 11px; color: #718096; margin-top: 2px;">⏰ ${escapeHtml(s.time)}</div>
+            <div style="background: #ffffff; border: 2px solid ${borderCol}; border-radius: 12px; padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <img src="${avatar}" style="width: 44px; height: 44px; border-radius: 50%; background: #edf2f7;">
+                    <div>
+                        <div style="font-weight: 700; font-size: 14px; color: #2d3748;">${escapeHtml(s.name)}</div>
+                        <div style="font-size: 12px; color: #4a5568; font-weight: 600;">Kelas: ${escapeHtml(s.class)}</div>
+                        <div style="font-size: 11px; color: #718096; margin-top: 2px;">⏰ ${escapeHtml(s.time)}</div>
+                    </div>
+                </div>
+                <div style="background: ${statusBg}; color: ${statusColor}; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 6px; white-space: nowrap;">
+                    ${statusText}
                 </div>
             </div>
         `;
@@ -425,6 +478,7 @@ function renderStudentLoginsMonitor(studentList) {
     html += `</div>`;
     container.innerHTML = html;
 }
+
 
 // Sidebar Tab Navigation Handler
 function setupNavigation() {
