@@ -487,7 +487,7 @@ function renderStudentLoginsMonitor(studentList) {
     const badge = document.getElementById("onlineBadge");
     const container = document.getElementById("studentMonitorContainer");
 
-    // Hitung HANYA siswa yang benar-benar aktif Online 🟢
+    // Filter HANYA siswa yang benar-benar aktif Online 🟢
     const activeOnlineList = studentList.filter(s => s.isOnline);
 
     if (badge) {
@@ -496,21 +496,18 @@ function renderStudentLoginsMonitor(studentList) {
 
     if (!container) return;
 
-    if (studentList.length === 0) {
+    if (activeOnlineList.length === 0) {
         container.innerHTML = `<div class="empty-state-banner"><p>Belum ada siswa yang terdeteksi online saat ini.</p></div>`;
         return;
     }
 
-    // Urutkan: Siswa Online 🟢 di atas, Siswa Offline 🔴 di bawah
-    const sortedList = [...studentList].sort((a, b) => (b.isOnline ? 1 : 0) - (a.isOnline ? 1 : 0));
-
     let html = `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin-top: 15px;">`;
-    sortedList.forEach(s => {
+    activeOnlineList.forEach(s => {
         const avatar = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(s.name)}`;
-        const statusBg = s.isOnline ? "#DEF7EC" : "#F3F4F6";
-        const statusColor = s.isOnline ? "#03543F" : "#6B7280";
-        const borderCol = s.isOnline ? "#31C48D" : "#E5E7EB";
-        const statusText = s.isOnline ? "Online 🟢" : "Offline 🔴";
+        const statusBg = "#DEF7EC";
+        const statusColor = "#03543F";
+        const borderCol = "#31C48D";
+        const statusText = "Online 🟢";
 
         html += `
             <div style="background: #ffffff; border: 2px solid ${borderCol}; border-radius: 12px; padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
@@ -527,11 +524,11 @@ function renderStudentLoginsMonitor(studentList) {
                 </div>
             </div>
         `;
-
     });
     html += `</div>`;
     container.innerHTML = html;
 }
+
 
 
 // Sidebar Tab Navigation Handler
