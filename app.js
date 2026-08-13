@@ -142,13 +142,8 @@ function initFirebase() {
                 }
 
                 // Kalkulasi keaktifan real-time presence:
-                // Jika status "Offline 🔴" ATAU last_ping lebih dari 35 detik yang lalu, tandai Offline 🔴
-                let isOnline = false;
-                if (rawStatus.includes("Online") || rawStatus.includes("🟢")) {
-                    if (lastPing === 0 || (nowUnix - lastPing <= 35)) {
-                        isOnline = true;
-                    }
-                }
+                // Siswa HANYA dianggap Online 🟢 jika status memuat Online DAN memiliki last_ping aktif dalam 30 detik terakhir
+                const isOnline = (rawStatus.includes("Online") || rawStatus.includes("🟢")) && lastPing > 0 && (nowUnix - lastPing <= 30);
 
                 lastStudentList.push({
                     id: docSnap.id,
@@ -166,21 +161,24 @@ function initFirebase() {
             console.warn("Logins listener error:", error);
         });
 
-        // Auto re-evaluate student presence timeout every 10 seconds
+        // Auto re-evaluate student presence timeout every 5 seconds
         if (!presenceCheckInterval) {
             presenceCheckInterval = setInterval(() => {
                 if (lastStudentList.length > 0) {
                     const nowUnix = Math.floor(Date.now() / 1000);
                     lastStudentList.forEach(s => {
-                        if (s.isOnline && s.lastPing > 0 && (nowUnix - s.lastPing > 35)) {
-                            s.isOnline = false;
-                            s.status = "Offline 🔴";
+                        if (s.isOnline) {
+                            if (s.lastPing === 0 || (nowUnix - s.lastPing > 30)) {
+                                s.isOnline = false;
+                                s.status = "Offline 🔴";
+                            }
                         }
                     });
                     renderStudentLoginsMonitor(lastStudentList);
                 }
-            }, 10000);
+            }, 5000);
         }
+
 
 
         // Listen Real-Time Student Quiz Results
@@ -361,7 +359,7 @@ function renderStudentDetailView(studentObj) {
                     <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b; font-weight: 600;">Kelas ${escapeHtml(studentObj.class)} • Status: Telah Mengerjakan Ujian Kuis</p>
                 </div>
             </div>
-            <div style="display: flex; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
                 <div style="background: #F3E8FF; border: 1px solid #DDD6FE; padding: 6px 12px; border-radius: 8px; text-align: center;">
                     <div style="font-size: 10px; color: #6D28D9; font-weight: 700;">RATA-RATA</div>
                     <div style="font-size: 16px; font-weight: 800; color: #7C3AED;">${avgScore}</div>
@@ -370,6 +368,10 @@ function renderStudentDetailView(studentObj) {
                     <div style="font-size: 10px; color: #047857; font-weight: 700;">TOTAL KUIS</div>
                     <div style="font-size: 16px; font-weight: 800; color: #059669;">${totalQuizzes}</div>
                 </div>
+                <button onclick="deleteStudentAllResults('${escapeHtml(studentObj.name)}', '${escapeHtml(studentObj.class)}')" 
+                        style="background: #FEF2F2; color: #EF4444; border: 1.5px solid #FCA5A5; border-radius: 8px; padding: 7px 10px; font-size: 11px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.2s ease;">
+                    🗑️ Hapus Semua Data Siswa Ini
+                </button>
             </div>
         </div>
 
@@ -398,6 +400,12 @@ function renderStudentDetailView(studentObj) {
                     <div style="font-weight: 800; font-size: 14px; color: #1e293b;">${escapeHtml(q.title)}</div>
                     <div style="font-size: 11px; color: #64748b; margin-top: 2px;">⏰ Selesai pada: ${escapeHtml(q.time)}</div>
                     <div style="font-size: 11px; color: #475569; margin-top: 4px; font-style: italic;">💡 Evaluation Note: "${evalText}"</div>
+                    <div style="margin-top: 6px;">
+                        <button onclick="deleteQuizResult('${q.id}', '${escapeHtml(q.name)}')" 
+                                style="background: #FEE2E2; color: #DC2626; border: 1px solid #FCA5A5; border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.2s ease;">
+                            🗑️ Hapus Hasil Ini
+                        </button>
+                    </div>
                 </div>
                 <div style="text-align: right;">
                     <div style="font-size: 18px; font-weight: 900; color: ${badgeBg};">${q.score} / 100</div>
@@ -410,6 +418,51 @@ function renderStudentDetailView(studentObj) {
     detailHtml += `</div>`;
     detailView.innerHTML = detailHtml;
 }
+
+// Window Expose Delete Quiz Functions
+window.deleteQuizResult = async function(id, name) {
+    if (!confirm(`Apakah Anda yakin ingin menghapus 1 hasil kuis ini milik "${name}"?`)) return;
+    try {
+        if (isFirebaseOnline && id && !id.startsWith("local-")) {
+            await deleteDoc(doc(db, "student_quiz_results", id));
+            showToast(`🗑️ Hasil kuis "${name}" berhasil dihapus dari Firestore!`);
+        } else {
+            quizResultsList = quizResultsList.filter(q => q.id !== id);
+            renderQuizResultsMonitor();
+            showToast(`🗑️ Hasil kuis "${name}" berhasil dihapus!`);
+        }
+    } catch (err) {
+        console.error("Delete quiz error:", err);
+        quizResultsList = quizResultsList.filter(q => q.id !== id);
+        renderQuizResultsMonitor();
+        showToast(`🗑️ Hasil kuis "${name}" berhasil dihapus!`);
+    }
+};
+
+window.deleteStudentAllResults = async function(name, className) {
+    if (!confirm(`⚠️ PERINGATAN: Apakah Anda yakin ingin menghapus SELURUH hasil belajar dan nilai kuis milik siswa "${name}" (Kelas ${className})?`)) return;
+    try {
+        const toDelete = quizResultsList.filter(q => q.name === name && q.class === className);
+        for (const item of toDelete) {
+            if (isFirebaseOnline && item.id && !item.id.startsWith("local-")) {
+                await deleteDoc(doc(db, "student_quiz_results", item.id));
+            }
+        }
+        quizResultsList = quizResultsList.filter(q => !(q.name === name && q.class === className));
+        selectedStudentKey = null;
+        renderQuizResultsMonitor();
+        showToast(`🗑️ Seluruh data hasil belajar "${name}" berhasil dihapus!`);
+    } catch (err) {
+        console.error("Delete all student results error:", err);
+        quizResultsList = quizResultsList.filter(q => !(q.name === name && q.class === className));
+        selectedStudentKey = null;
+        renderQuizResultsMonitor();
+        showToast(`🗑️ Data siswa "${name}" berhasil dibersihkan!`);
+    }
+};
+
+
+
 
 function downloadQuizCSV() {
     if (quizResultsList.length === 0) {
@@ -474,6 +527,7 @@ function renderStudentLoginsMonitor(studentList) {
                 </div>
             </div>
         `;
+
     });
     html += `</div>`;
     container.innerHTML = html;
