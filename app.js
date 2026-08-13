@@ -142,8 +142,13 @@ function initFirebase() {
             });
 
             renderStudentLoginsMonitor(studentList);
+        }, (error) => {
+            console.warn("Logins listener error:", error);
+        });
+
         // Listen Real-Time Student Quiz Results
         const quizResultsRef = collection(db, "student_quiz_results");
+
         onSnapshot(quizResultsRef, (snapshot) => {
             quizResultsList = [];
             snapshot.forEach((docSnap) => {
