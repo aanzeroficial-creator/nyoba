@@ -29,23 +29,23 @@ const defaultItems = [
         name: "Pensil 2B Kebahagiaan",
         price: 3000,
         category: "alat_tulis",
-        icon: "res://aset 2d/1000513844-removebg-preview.png",
+        icon: "res://assset game masak 2d/Sprites/Sprites/Icons/chalk1_chalk.png",
         desc: "Pensil 2B kualitas tinggi untuk menulis di kelas"
     },
     {
         id: "local-2",
-        name: "Paket Jangka Matematika",
-        price: 13000,
+        name: "Buku Tulis Sekolah",
+        price: 5000,
         category: "alat_tulis",
-        icon: "res://aset 2d/1000513843-removebg-preview.png",
-        desc: "Set jangka dan penggaris melukis sudut"
+        icon: "res://assset game masak 2d/Sprites/Sprites/Environment/Shelf/books.png",
+        desc: "Buku tulis bergaris untuk catatan pelajaran"
     },
     {
         id: "local-3",
         name: "Roti Coklat Bergizi",
         price: 5000,
         category: "makanan",
-        icon: "res://aset 2d/roti.png",
+        icon: "res://assset game masak 2d/Sprites/Sprites/Icons/bread_chalk.png",
         desc: "Roti empuk selai coklat bergizi"
     },
     {
@@ -53,7 +53,7 @@ const defaultItems = [
         name: "Susu Kotak UHT",
         price: 6000,
         category: "makanan",
-        icon: "res://aset 2d/susu.png",
+        icon: "res://assset game masak 2d/Sprites/Sprites/Icons/milk_chalk.png",
         desc: "Susu segar kalsium tinggi untuk kesehatan"
     }
 ];
@@ -592,7 +592,13 @@ function renderItemsGrid() {
 
     let html = "";
     filtered.forEach((item) => {
-        const catLabel = item.category === "makanan" ? "Toko Makanan" : "Toko Buku & Alat";
+        const catLabels = {
+            makanan: "Toko Makanan",
+            alat_tulis: "Toko Buku & Alat",
+            mainan: "Toko Mainan",
+            pakaian: "Toko Pakaian"
+        };
+        const catLabel = catLabels[item.category] || "Toko Belanja";
         const imageSrc = item.icon && (item.icon.startsWith("http") || item.icon.startsWith("data:image")) 
             ? item.icon 
             : "https://api.dicebear.com/7.x/shapes/svg?seed=" + encodeURIComponent(item.name);
